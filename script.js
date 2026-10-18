@@ -31,6 +31,64 @@ if (menuToggle && mainNav) {
   });
 }
 
+const floatingBookingLink = document.querySelector(".floating-whatsapp");
+const floatingOverlapTargets = document.querySelectorAll(".feedback-proof-link, .feedback-google-link, .gallery-item, .faq-list summary, .faq-list details p");
+let floatingOverlapObserver = null;
+const overlappingFloatingTargets = new Set();
+
+function setFloatingBookingOverlap(isOverlapping) {
+  if (!floatingBookingLink) return;
+
+  floatingBookingLink.classList.toggle("is-overlapping", isOverlapping);
+
+  if (isOverlapping) {
+    floatingBookingLink.setAttribute("aria-hidden", "true");
+    floatingBookingLink.setAttribute("tabindex", "-1");
+    if (document.activeElement === floatingBookingLink) floatingBookingLink.blur();
+  } else {
+    floatingBookingLink.removeAttribute("aria-hidden");
+    floatingBookingLink.removeAttribute("tabindex");
+  }
+}
+
+function observeFloatingActionOverlaps() {
+  floatingOverlapObserver?.disconnect();
+  overlappingFloatingTargets.clear();
+  setFloatingBookingOverlap(false);
+
+  if (
+    !floatingBookingLink ||
+    !floatingOverlapTargets.length ||
+    !("IntersectionObserver" in window)
+  ) return;
+
+  const floatingRect = floatingBookingLink.getBoundingClientRect();
+  const overlapGuard = 4;
+  const rootMargins = [
+    Math.max(0, floatingRect.top - overlapGuard),
+    Math.max(0, window.innerWidth - floatingRect.right - overlapGuard),
+    Math.max(0, window.innerHeight - floatingRect.bottom - overlapGuard),
+    Math.max(0, floatingRect.left - overlapGuard)
+  ].map((inset) => `${-inset}px`).join(" ");
+
+  floatingOverlapObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      const overlaps = entry.isIntersecting && entry.intersectionRect.width > 0 && entry.intersectionRect.height > 0;
+      if (overlaps) overlappingFloatingTargets.add(entry.target);
+      else overlappingFloatingTargets.delete(entry.target);
+    });
+
+    setFloatingBookingOverlap(overlappingFloatingTargets.size > 0);
+  }, { rootMargin: rootMargins, threshold: 0 });
+
+  floatingOverlapTargets.forEach((target) => floatingOverlapObserver.observe(target));
+}
+
+if (floatingBookingLink && floatingOverlapTargets.length && "IntersectionObserver" in window) {
+  observeFloatingActionOverlaps();
+  window.addEventListener("resize", observeFloatingActionOverlaps, { passive: true });
+}
+
 const year = document.getElementById("year");
 if (year) year.textContent = new Date().getFullYear();
 
@@ -50,16 +108,68 @@ if (backToTopLink && pageEndSentinel && "IntersectionObserver" in window) {
   pageEndObserver.observe(pageEndSentinel);
 }
 
-const WHATSAPP_BOOKING_URL = "https://wa.me/message/VJRS45VPMOUSB1";
+const WHATSAPP_BOOKING_URL = "https://wa.me/5521979565902";
 
 const bookingForm = document.getElementById("booking-form");
 if (bookingForm) {
+  const clientNameInput = bookingForm.querySelector("#client-name");
+  const clientServiceInput = bookingForm.querySelector("#client-service");
+  const clientMessageInput = bookingForm.querySelector("#client-message");
+
+  clientNameInput?.addEventListener("input", () => {
+    if (clientNameInput.value.trim()) clientNameInput.setCustomValidity("");
+  });
+
+  clientServiceInput?.addEventListener("change", () => {
+    if (clientServiceInput.value.trim()) clientServiceInput.setCustomValidity("");
+  });
+
   bookingForm.addEventListener("submit", (event) => {
     event.preventDefault();
 
-    if (!bookingForm.reportValidity()) return;
+    if (!clientNameInput || !clientServiceInput) return;
 
-    window.open(WHATSAPP_BOOKING_URL, "_blank", "noopener,noreferrer");
+    const name = clientNameInput.value.trim();
+    const service = clientServiceInput.value.trim();
+    const additionalMessage = clientMessageInput?.value.trim() ?? "";
+
+    clientNameInput.setCustomValidity(name ? "" : "Informe seu nome.");
+    clientServiceInput.setCustomValidity(service ? "" : "Selecione um serviço.");
+
+    if (!bookingForm.reportValidity()) {
+      clientNameInput.setCustomValidity("");
+      clientServiceInput.setCustomValidity("");
+      return;
+    }
+
+    const messageLines = [
+      "Olá! Gostaria de agendar um atendimento.",
+      "",
+      `Nome: ${name}`,
+      `Serviço: ${service}`
+    ];
+
+    if (additionalMessage) messageLines.push(`Mensagem: ${additionalMessage}`);
+
+    const whatsappUrl = `${WHATSAPP_BOOKING_URL}?text=${encodeURIComponent(messageLines.join("\n"))}`;
+    let whatsappWindow = null;
+
+    try {
+      whatsappWindow = window.open(whatsappUrl, "_blank");
+    } catch {
+      // The same-tab navigation below is the fallback if opening a new tab fails.
+    }
+
+    if (whatsappWindow) {
+      try {
+        whatsappWindow.opener = null;
+      } catch {
+        // Cross-origin window restrictions can prevent changing opener.
+      }
+      return;
+    }
+
+    window.location.assign(whatsappUrl);
   });
 }
 
